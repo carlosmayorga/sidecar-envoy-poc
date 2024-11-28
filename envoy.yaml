@@ -1,0 +1,59 @@
+static_resources:
+  listeners:
+  - name: listener_http
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 9901
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: service_b
+              domains: ["*"]
+              routes:
+              - match:
+                  prefix: "/service-b"
+                route:
+                  cluster: service_b_cluster
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+  - name: service_b_cluster
+    connect_timeout: 1s
+    type: LOGICAL_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: service_b_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: service-b
+                port_value: 8080
+    circuit_breakers:
+      thresholds:
+      - priority: DEFAULT
+        max_requests: 2
+        max_connections: 2
+    outlier_detection:
+      consecutive_5xx: 1                     # Aísla tras 3 errores HTTP 5xx consecutivos
+      enforcing_consecutive_5xx: 100         # Asegura aislamiento total
+      interval: 2s                           # Evalúa en intervalos más frecuentes
+      base_ejection_time: 60s                # Aumenta el tiempo de aislamiento
+      max_ejection_percent: 100              # Permite aislar el 100% de los endpoints
+
+admin:
+  access_log_path: "/tmp/envoy_access.log"
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9902
